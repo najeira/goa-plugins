@@ -93,6 +93,13 @@ func (g *Generator) Generate() (_ []string, err error) {
 	}
 	g.genfiles = append(g.genfiles, filename)
 
+	// generate mount_gen.go
+	filename, err = generateMounter(g.Force, g.OutDir, g.Pkg, imports, g.API)
+	if err != nil {
+		return nil, err
+	}
+	g.genfiles = append(g.genfiles, filename)
+
 	appFuncMap := funcMap(pkgName)
 
 	// generate controllers
@@ -206,6 +213,37 @@ func generateControllerUtil(
 	if err = file.ExecuteTemplate("utils", utilsT, nil, nil); err != nil {
 		return "", err
 	}
+	if err = file.FormatCode(); err != nil {
+		return "", err
+	}
+	return filename, nil
+}
+
+func generateMounter(
+	force bool,
+	outDir string,
+	pkg string,
+	imports []*codegen.ImportSpec,
+	api *design.APIDefinition) (string, error) {
+	filename := filepath.Join(outDir, "mount_gen.go")
+
+	file, err := sourceFileFor(true, outDir, filename)
+	if file == nil || err != nil {
+		return "", err
+	}
+
+	title := fmt.Sprintf("%s mount controllers", pkg)
+	file.WriteHeader(title, pkg, imports)
+
+	file.Write([]byte("func MountControllers(service *goa.Service) {"))
+	err = api.IterateResources(func(r *design.ResourceDefinition) error {
+		if err = file.ExecuteTemplate("mount", mountT, nil, r); err != nil {
+			panic(err)
+			return err
+		}
+		return nil
+	})
+	file.Write([]byte("}"))
 	if err = file.FormatCode(); err != nil {
 		return "", err
 	}
@@ -413,4 +451,8 @@ func SendError(ctx interface{}, err error) error {
 	}
 	return err
 }
+
 `
+
+const mountT = `{{ $ctrlName := printf "%s%s" (goify .Name true) "Controller" }}
+app.Mount{{ $ctrlName }}(service, New{{ $ctrlName }}(service))`
