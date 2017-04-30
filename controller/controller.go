@@ -133,21 +133,23 @@ func generateController(
 	// generate scaffold
 	scaffoldName := filepath.Join(outDir, codegen.SnakeCase(name)+".go")
 	scaffoldFile, err := sourceFileFor(force, outDir, scaffoldName)
-	if scaffoldFile == nil || err != nil {
+	if err != nil {
 		return "", "", err
-	}
-	if err := generateControllerScaffold(scaffoldFile, pkg, imports, funcMap, r); err != nil {
-		return "", "", err
+	} else if scaffoldFile != nil {
+		if err := generateControllerScaffold(scaffoldFile, pkg, imports, funcMap, r); err != nil {
+			return "", "", err
+		}
 	}
 
 	// generate controller definition
 	genName := filepath.Join(outDir, codegen.SnakeCase(name)+"_gen.go")
 	genFile, err := sourceFileFor(force, outDir, genName)
-	if genFile == nil || err != nil {
+	if err != nil {
 		return "", "", err
-	}
-	if err := generateControllerDefinition(genFile, pkg, imports, funcMap, r); err != nil {
-		return "", "", err
+	} else if genFile != nil {
+		if err := generateControllerDefinition(genFile, pkg, imports, funcMap, r); err != nil {
+			return "", "", err
+		}
 	}
 
 	return scaffoldName, genName, nil
@@ -165,13 +167,7 @@ func generateControllerDefinition(
 		return err
 	}
 	err := r.IterateActions(func(a *design.ActionDefinition) error {
-		name := "action"
-		tmpl := actionT
-		if a.WebSocket() {
-			name = "actionWS"
-			tmpl = actionWST
-		}
-		return file.ExecuteTemplate(name, tmpl, funcMap, a)
+		return file.ExecuteTemplate("action", actionT, funcMap, a)
 	})
 	if err != nil {
 		return err
@@ -201,7 +197,7 @@ func generateControllerUtil(
 	pkg string,
 	imports []*codegen.ImportSpec) (string, error) {
 	filename := filepath.Join(outDir, "utils_gen.go")
-	file, err := sourceFileFor(force, outDir, filename)
+	file, err := sourceFileFor(true, outDir, filename)
 	if file == nil || err != nil {
 		return "", err
 	}
@@ -229,14 +225,22 @@ func sourceFileFor(force bool, outDir, filename string) (*codegen.SourceFile, er
 	return codegen.SourceFileFor(filename)
 }
 
-func getImports(appPkg, outDir string) ([]*codegen.ImportSpec, error) {
-	impName := appPkg
-	if _, err := codegen.PackageSourcePath(appPkg); err != nil {
+func getImportPath(pkg, outDir string) (string, error) {
+	name := pkg
+	if _, err := codegen.PackageSourcePath(pkg); err != nil {
 		pkgPath, err := codegen.PackagePath(outDir)
 		if err != nil {
-			return nil, err
+			return "", err
 		}
-		impName = path.Join(filepath.ToSlash(pkgPath), appPkg)
+		name = path.Join(filepath.ToSlash(pkgPath), pkg)
+	}
+	return name, nil
+}
+
+func getImports(appPkg, outDir string) ([]*codegen.ImportSpec, error) {
+	impName, err := getImportPath(appPkg, outDir)
+	if err != nil {
+		return nil, err
 	}
 	imports := []*codegen.ImportSpec{
 		codegen.SimpleImport("io"),
@@ -343,23 +347,6 @@ func (c *{{ $ctrlName }}) Do{{ goify .Name true }}(ctx *{{ targetPkg }}.{{ goify
 	return {{ if $ok }}{{ $ok.TypeRef }}{{ else }}nil{{ end }}, nil
 }
 `
-
-const actionWST = `{{ $ctrlName := printf "%s%s" (goify .Parent.Name true) "Controller" }}// {{ goify .Name true }} runs the {{ .Name }} action.
-func (c *{{ $ctrlName }}) {{ goify .Name true }}(ctx *{{ targetPkg }}.{{ goify .Name true }}{{ goify .Parent.Name true }}Context) error {
-	c.{{ goify .Name true }}WSHandler(ctx).ServeHTTP(ctx.ResponseWriter, ctx.Request)
-	return nil
-}
-
-// {{ goify .Name true }}WSHandler establishes a websocket connection to run the {{ .Name }} action.
-func (c *{{ $ctrlName }}) {{ goify .Name true }}WSHandler(ctx *{{ targetPkg }}.{{ goify .Name true }}{{ goify .Parent.Name true }}Context) websocket.Handler {
-	return func(ws *websocket.Conn) {
-		// Put your logic here
-
-		ws.Write([]byte("{{ .Name }} {{ .Parent.Name }}"))
-		// Dummy echo websocket server
-		io.Copy(ws, ws)
-	}
-}`
 
 const utilsT = `
 // BadRequestSender sends a HTTP response with status code 400.
