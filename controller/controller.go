@@ -451,7 +451,6 @@ func SendError(ctx interface{}, err error) error {
 	}
 	return err
 }
-
 `
 
 const mountT = `{{ $ctrlName := printf "%s%s" (goify .Name true) "Controller" }}
